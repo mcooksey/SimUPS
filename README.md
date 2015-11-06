@@ -1,5 +1,4 @@
 # SimUPS
-Training Thursday Exercise
 
 The assignment is to create a simulated package delivery system (aka “SimUPS”) in order to gain experience on routing data between points, which is exactly what we will be doing with Scala/Akka in Blade Runner and beyond… In this simulation, your company is NOT concerned with speed or priority, just “guaranteed” delivery…
 
