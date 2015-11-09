@@ -5,6 +5,7 @@
 import scala.io.Source
 import scala.collection.mutable
 
+
 class Hub(val city: String, val state: String, var id: String) {
   def this(city: String, state: String) = {
     this(city, state, (city + "-" + state).toLowerCase())
@@ -12,6 +13,33 @@ class Hub(val city: String, val state: String, var id: String) {
 
   override def toString = {
     s"city: $city, state:$state"
+  }
+
+  def send(parcel:Parcel):Unit = {
+    val nextHop = SimUPS.hops(parcel.route.dequeue().id)
+    val nextHub = nextHop.hub2
+    print(s"${this.city} is sending ${parcel.name} to ${nextHub.city}")
+    for (i <- 1 to 3) {
+      print(".")
+      Thread.sleep(1000)
+    }
+    println()
+    nextHub.receive(parcel)
+  }
+
+  def receive(parcel:Parcel):Unit = {
+    if (this.id.equals(parcel.destination.id)) {
+      println(s"${parcel.name} has reached destination in ${this.city}!")
+    }
+    else {
+      if (parcel.origin.id.equals(this.id)) {
+        println(s"Received new shipment ${parcel.name} in ${this.city}.")
+      }
+      else {
+        println(s"${parcel.name} has been received by ${this.city}.")
+      }
+      this.send(parcel)
+    }
   }
 }
 
@@ -25,9 +53,14 @@ class Hop(val hub1: Hub, val hub2: Hub, val hours: Int, val minutes: Int, val mi
   }
 }
 
+class Parcel(val origin: Hub, val destination:Hub, val name:String, val route:mutable.Queue[Hop]) {
+
+}
+
 object SimUPS {
   var hubs = new mutable.HashMap[String, Hub]
   var hops = new mutable.HashMap[String, Hop]
+
 
   def main(args: Array[String]) = {
     initializeHubList("C:\\Users\\mcooksey\\Documents\\GitHub\\SimUPS\\hubs.csv")
@@ -39,11 +72,12 @@ object SimUPS {
       println("What would you like to do?")
       println("--------------------------")
       println("1. Add a hop")
-      println("2. Delete a hub")
-      println("3. Reload default hubs")
-      println("4. Show available hubs")
-      println("5. Route a package")
-      println("6. Quit")
+      println("2. Delete a hop")
+      println("3. Delete a hub")
+      println("4. Reload default hubs")
+      println("5. Show available hubs")
+      println("6. Route a package")
+      println("7. Quit")
       println("--------------------------")
       println("==========================")
       print("\nEnter the number for desired operation: ")
@@ -52,12 +86,13 @@ object SimUPS {
 
       option match {
         case '1' => addHop()
-        case '2' => deleteHub()
-        case '3' => reloadHubs()
-        case '4' => showAllHubs()
-        case '5' => routePackage()
-        case '6' => continue = false
-        case '7' => debug()
+        case '2' => deleteHop()
+        case '3' => deleteHub()
+        case '4' => reloadHubs()
+        case '5' => showAllHubs()
+        case '6' => routePackage()
+        case '7' => continue = false
+        case '8' => debug()
         case _ => println("Invalid Entry")
       }
       println()
@@ -133,6 +168,45 @@ object SimUPS {
     }
   }
 
+  def deleteHop() = {
+    println("\n*******DELETE HOP*********")
+    var validOrigin = false
+    var origin = new String
+    var validDestination = false
+    var destination = new String
+    do {
+      print("Enter the origin of the hop: ")
+      origin = scala.io.StdIn.readLine().toLowerCase()
+      if (hubs.keySet.contains(origin)) {
+        validOrigin = true
+      }
+      else {
+        println("Invalid origin entered.")
+      }
+    } while (!validOrigin)
+
+    do {
+      print("Enter the destination of the hop: ")
+      destination = scala.io.StdIn.readLine().toLowerCase()
+      if (hubs.keySet.contains(destination)) {
+        validDestination = true
+      }
+      else {
+        println("Invalid destination entered.")
+      }
+    } while (!validDestination)
+    if (hops.keySet.contains(origin + ">" + destination)) {
+      hops.remove(origin + ">" + destination)
+      if (hops.keySet.contains(destination + ">" + origin)) {
+        hops.remove(destination + ">" + origin)
+      }
+      println("Hop removed.")
+    }
+    else {
+      println("Hop does not exist.")
+    }
+  }
+
   def reloadHubs() = {
     println("\n*******RELOAD HUBS********")
 
@@ -188,6 +262,9 @@ object SimUPS {
       }
     } while (!validDestination)
 
+    print("Enter a description for the package:")
+    val description = scala.io.StdIn.readLine()
+
     val shortestPath = Dijkstra.getShortestPath(hops, origin, destination)
 
     val path = shortestPath._2.to[List]
@@ -198,16 +275,22 @@ object SimUPS {
       println(s"No route found between $origin and $destination...")
     }
     else {
+      println("\n**Routing package**")
+      print("Path is: ")
+
       for (i <- path.indices) {
         if (i+1 < path.size) {
+          print(path(i) + " > ")
           val hop = hops(path(i) + ">" + path(i + 1))
           route.enqueue(hop)
         }
+        else {
+          println(path(i) + s". Total miles: ${shortestPath._1}\n")
+        }
       }
-      while(route.nonEmpty) {
-        val hop = route.dequeue()
-        println(s"Hub1: ${hop.hub1.city}, Hub2: ${hop.hub2.city}, miles: ${hop.miles}")
-      }
+      val parcel = new Parcel(hubs(origin), hubs(destination), "\"" + description + "\"", route)
+      hubs(origin).receive(parcel)
+
     }
   }
 
