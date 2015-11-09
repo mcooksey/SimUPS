@@ -5,19 +5,21 @@
 import scala.io.Source
 import scala.collection.mutable
 
-class Hub(val city: String, val state: String, var id:String) {
-  def this(city:String, state:String) = {
+class Hub(val city: String, val state: String, var id: String) {
+  def this(city: String, state: String) = {
     this(city, state, (city + "-" + state).toLowerCase())
   }
+
   override def toString = {
     s"city: $city, state:$state"
   }
 }
 
-class Hop(val hub1: Hub, val hub2: Hub, val hours: Int, val minutes: Int, val miles: Int, var id:String) {
+class Hop(val hub1: Hub, val hub2: Hub, val hours: Int, val minutes: Int, val miles: Int, var id: String) {
   def this(hub1: Hub, hub2: Hub, hours: Int, minutes: Int, miles: Int) = {
     this(hub1, hub2, hours, minutes, miles, hub1.id + ">" + hub2.id)
   }
+
   override def toString = {
     s"id: $id, hours: $hours, minutes: $minutes, miles: $miles"
   }
@@ -48,7 +50,7 @@ object SimUPS {
 
       val option = scala.io.StdIn.readChar()
 
-       option match {
+      option match {
         case '1' => addHop()
         case '2' => deleteHub()
         case '3' => reloadHubs()
@@ -64,7 +66,13 @@ object SimUPS {
   }
 
   def debug() = {
-    hops.foreach{case(k,v) => println(k, v.toString)}
+    val route = new mutable.Queue[String]
+    route.enqueue("test")
+    route.enqueue("Blah")
+    while (!route.isEmpty) {
+      val res = route.dequeue()
+      println(res)
+    }
   }
 
   def addHop() = {
@@ -90,16 +98,16 @@ object SimUPS {
     putHop(hub1, hub2, hours, minutes, miles)
   }
 
-  def putHop(hub1:Hub, hub2:Hub, hours:Int, minutes:Int, miles:Int) {
+  def putHop(hub1: Hub, hub2: Hub, hours: Int, minutes: Int, miles: Int) {
     val hop = new Hop(hub1, hub2, hours, minutes, miles)
     val hopBack = new Hop(hub2, hub1, hours, minutes, miles)
 
-    if (!hubs.keySet.exists(_ == hub1.id)) {
+    if (!hubs.keySet.contains(hub1.id)) {
       hubs.put(hub1.id, hub1)
     }
     hops.put(hop.id, hop)
 
-    if (!hubs.keySet.exists(_== hub2.id)) {
+    if (!hubs.keySet.contains(hub2.id)) {
       hubs.put(hub2.id, hub2)
     }
     hops.put(hopBack.id, hopBack)
@@ -109,10 +117,10 @@ object SimUPS {
     println("\n*******DELETE HUB*********")
     print("Enter hub to delete: ")
     val hub = scala.io.StdIn.readLine().toLowerCase()
-    if (hubs.keySet.exists(_ == hub)) {
+    if (hubs.keySet.contains(hub)) {
       hubs.remove(hub)
-      hops.foreach{
-        case(key, hop) => {
+      hops.foreach {
+        case (key, hop) => {
           if (hop.hub1.id.equals(hub) || hop.hub2.id.equals(hub)) {
             hops.remove(key)
           }
@@ -149,60 +157,65 @@ object SimUPS {
   def showAllHubs() = {
     println("\n******Available Hubs******")
     println(s"*********${hubs.size} TOTAL*********")
-    hubs.foreach {case (key,hub) => println(hub.city + ", " + hub.state)}
+    hubs.foreach { case (key, hub) => println(hub.city + ", " + hub.state) }
   }
 
   def routePackage() = {
     println("\n*****ROUTE A PACKAGE******")
-        var validOrigin = false
-        var origin = new String
-        var validDestination = false
-        var destination = new String
-        do {
-          print("Enter an origin: ")
-          origin = scala.io.StdIn.readLine().toLowerCase()
-          if (hubs.keySet.exists(_ == origin)) {
-            validOrigin = true
-          }
-          else {
-            println("Invalid origin entered.")
-          }
-        } while (!validOrigin)
+    var validOrigin = false
+    var origin = new String
+    var validDestination = false
+    var destination = new String
+    do {
+      print("Enter an origin: ")
+      origin = scala.io.StdIn.readLine().toLowerCase()
+      if (hubs.keySet.contains(origin)) {
+        validOrigin = true
+      }
+      else {
+        println("Invalid origin entered.")
+      }
+    } while (!validOrigin)
 
-        do {
-          print("Enter a destination: ")
-          destination = scala.io.StdIn.readLine().toLowerCase()
-          if (hubs.keySet.exists(_ == destination)) {
-            validDestination = true
-          }
-          else {
-            println("Invalid destination entered.")
-          }
-        } while (!validDestination)
+    do {
+      print("Enter a destination: ")
+      destination = scala.io.StdIn.readLine().toLowerCase()
+      if (hubs.keySet.contains(destination)) {
+        validDestination = true
+      }
+      else {
+        println("Invalid destination entered.")
+      }
+    } while (!validDestination)
 
-        val shortestPath = Dijkstra.getShortestPath(hops, origin, destination)
+    val shortestPath = Dijkstra.getShortestPath(hops, origin, destination)
 
-        val path = shortestPath._2.to[List]
-        val totalMiles = shortestPath._1.toDouble
+    val path = shortestPath._2.to[List]
 
-        if (path.isEmpty) {
-          println(s"No route found between $origin and $destination...")
+    val route = new mutable.Queue[Hop]()
+
+    if (path.isEmpty) {
+      println(s"No route found between $origin and $destination...")
+    }
+    else {
+      for (i <- path.indices) {
+        if (i+1 < path.size) {
+          val hop = hops(path(i) + ">" + path(i + 1))
+          route.enqueue(hop)
         }
-
-        else {
-          for (city <- path) {
-            println(city)
-          }
-          println(s"Total miles: $totalMiles")
-        }
+      }
+      while(route.nonEmpty) {
+        val hop = route.dequeue()
+        println(s"Hub1: ${hop.hub1.city}, Hub2: ${hop.hub2.city}, miles: ${hop.miles}")
+      }
+    }
   }
 
 
-  def initializeHubList(inFile:String) = {
+  def initializeHubList(inFile: String) = {
     val source = Source.fromFile(inFile)
     for (line <- source.getLines()) {
       val cols = line.split(",").map(_.trim)
-      // do whatever you want with the columns here
       val hub1 = new Hub(cols(0), cols(1))
       val hub2 = new Hub(cols(2), cols(3))
       val hours = cols(4).toInt
