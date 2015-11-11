@@ -2,9 +2,9 @@
   * Created by mcooksey on 10/29/2015.
   */
 
-import scala.io.Source
 import scala.collection.mutable
 
+import java.sql.{PreparedStatement, Connection, DriverManager}
 
 class Hub(val city: String, val state: String, var id: String) {
   def this(city: String, state: String) = {
@@ -15,7 +15,7 @@ class Hub(val city: String, val state: String, var id: String) {
     s"city: $city, state:$state"
   }
 
-  def send(parcel:Parcel):Unit = {
+  def send(parcel: Parcel): Unit = {
     val nextHop = SimUPS.hops(parcel.route.dequeue().id)
     val nextHub = nextHop.hub2
     print(s"${this.city} is sending ${parcel.name} to ${nextHub.city}")
@@ -27,7 +27,7 @@ class Hub(val city: String, val state: String, var id: String) {
     nextHub.receive(parcel)
   }
 
-  def receive(parcel:Parcel):Unit = {
+  def receive(parcel: Parcel): Unit = {
     if (this.id.equals(parcel.destination.id)) {
       println(s"${parcel.name} has reached destination in ${this.city}!")
     }
@@ -53,7 +53,7 @@ class Hop(val hub1: Hub, val hub2: Hub, val hours: Int, val minutes: Int, val mi
   }
 }
 
-class Parcel(val origin: Hub, val destination:Hub, val name:String, val route:mutable.Queue[Hop]) {
+class Parcel(val origin: Hub, val destination: Hub, val name: String, val route: mutable.Queue[Hop]) {
 
 }
 
@@ -63,7 +63,7 @@ object SimUPS {
 
 
   def main(args: Array[String]) = {
-    initializeHubList("C:\\Users\\mcooksey\\Documents\\GitHub\\SimUPS\\hubs.csv")
+    loadHubList()
 
     var continue = true
 
@@ -74,8 +74,8 @@ object SimUPS {
       println("1. Add a hop")
       println("2. Delete a hop")
       println("3. Delete a hub")
-      println("4. Reload default hubs")
-      println("5. Show available hubs")
+      println("4. Show available hubs")
+      println("5. Load hub list")
       println("6. Route a package")
       println("7. Quit")
       println("--------------------------")
@@ -88,8 +88,8 @@ object SimUPS {
         case '1' => addHop()
         case '2' => deleteHop()
         case '3' => deleteHub()
-        case '4' => reloadHubs()
-        case '5' => showAllHubs()
+        case '4' => showAllHubs()
+        case '5' => loadHubList()
         case '6' => routePackage()
         case '7' => continue = false
         case '8' => debug()
@@ -101,13 +101,26 @@ object SimUPS {
   }
 
   def debug() = {
-    val route = new mutable.Queue[String]
-    route.enqueue("test")
-    route.enqueue("Blah")
-    while (!route.isEmpty) {
-      val res = route.dequeue()
-      println(res)
-    }
+    val driver = "org.postgresql.Driver"
+    val url = "jdbc:postgresql:sim_ups"
+    val username = "mcooksey"
+    val password = "csa1csa1"
+
+    var connection: Connection = null
+
+    Class.forName(driver)
+    connection = DriverManager.getConnection(url, username, password)
+    val sql = "INSERT INTO routes (origin, origin_state, origin_air, destination, destination_state, destination_air, hours, minutes, miles) VALUES (?, ?, false, ?, ?, false, ?, ?, ?)"
+    val statement: PreparedStatement = connection.prepareStatement(sql)
+    statement.setString(1, "tupelo")
+    statement.setString(2, "ms")
+    statement.setString(3, "columbus")
+    statement.setString(4, "ms")
+    statement.setInt(5, 0)
+    statement.setInt(6, 59)
+    statement.setInt(7, 60)
+
+    statement.executeUpdate()
   }
 
   def addHop() = {
@@ -127,10 +140,28 @@ object SimUPS {
     print("Enter miles between hubs: ")
     val miles = scala.io.StdIn.readInt()
 
-    val hub1 = new Hub(originCity, originState)
-    val hub2 = new Hub(destinationCity, destinationState)
+    val driver = "org.postgresql.Driver"
+    val url = "jdbc:postgresql:sim_ups"
+    val username = "mcooksey"
+    val password = "csa1csa1"
 
-    putHop(hub1, hub2, hours, minutes, miles)
+    var connection: Connection = null
+
+    Class.forName(driver)
+    connection = DriverManager.getConnection(url, username, password)
+    val sql = "INSERT INTO routes (origin, origin_state, origin_air, destination, destination_state, destination_air, hours, minutes, miles) VALUES (?, ?, false, ?, ?, false, ?, ?, ?)"
+    val statement: PreparedStatement = connection.prepareStatement(sql)
+    statement.setString(1, originCity)
+    statement.setString(2, originState)
+    statement.setString(3, destinationCity)
+    statement.setString(4, destinationState)
+    statement.setInt(5, hours)
+    statement.setInt(6, minutes)
+    statement.setInt(7, miles)
+
+    statement.executeUpdate()
+
+    loadHubList()
   }
 
   def putHop(hub1: Hub, hub2: Hub, hours: Int, minutes: Int, miles: Int) {
@@ -153,19 +184,33 @@ object SimUPS {
     print("Enter hub to delete: ")
     val hub = scala.io.StdIn.readLine().toLowerCase()
     if (hubs.keySet.contains(hub)) {
-      hubs.remove(hub)
-      hops.foreach {
-        case (key, hop) => {
-          if (hop.hub1.id.equals(hub) || hop.hub2.id.equals(hub)) {
-            hops.remove(key)
-          }
-        }
-      }
+      deleteHubFromDB(hub)
+      loadHubList()
       println("Hub and all associated hops deleted.")
     }
     else {
       println("Hub does not exist.")
     }
+  }
+
+  def deleteHubFromDB(key:String) = {
+    val driver = "org.postgresql.Driver"
+    val url = "jdbc:postgresql:sim_ups"
+    val username = "mcooksey"
+    val password = "csa1csa1"
+
+    var connection: Connection = null
+    val hub = hubs(key)
+    Class.forName(driver)
+    connection = DriverManager.getConnection(url, username, password)
+    val sql = "DELETE FROM routes WHERE (lower(origin) = ? AND lower(origin_state) = ?) OR (lower(destination) = ? AND lower(destination_state) = ?)"
+    val statement: PreparedStatement = connection.prepareStatement(sql)
+    statement.setString(1, hub.city)
+    statement.setString(2, hub.state)
+    statement.setString(3, hub.city)
+    statement.setString(4, hub.state)
+
+    statement.executeUpdate()
   }
 
   def deleteHop() = {
@@ -196,10 +241,8 @@ object SimUPS {
       }
     } while (!validDestination)
     if (hops.keySet.contains(origin + ">" + destination)) {
-      hops.remove(origin + ">" + destination)
-      if (hops.keySet.contains(destination + ">" + origin)) {
-        hops.remove(destination + ">" + origin)
-      }
+      deleteHopFromDB(origin + ">" + destination)
+      loadHubList()
       println("Hop removed.")
     }
     else {
@@ -207,25 +250,30 @@ object SimUPS {
     }
   }
 
-  def reloadHubs() = {
-    println("\n*******RELOAD HUBS********")
+  def deleteHopFromDB(key:String) = {
+    val hop = hops(key)
 
-    var continue = true
-    while (continue) {
-      print("This will load all hubs that do not exist from the .csv file. Continue? (y/n): ")
-      val option = scala.io.StdIn.readChar().toLower
+    val driver = "org.postgresql.Driver"
+    val url = "jdbc:postgresql:sim_ups"
+    val username = "mcooksey"
+    val password = "csa1csa1"
 
-      option match {
-        case 'y' => {
-          //1hubs.clear()
-          initializeHubList("C:\\Users\\mcooksey\\Documents\\GitHub\\SimUPS\\hubs.csv")
-          println("Hubs reloaded.")
-          continue = false
-        }
-        case 'n' => continue = false
-        case _ => println("Invalid Entry")
-      }
-    }
+    var connection: Connection = null
+    Class.forName(driver)
+    connection = DriverManager.getConnection(url, username, password)
+    val sql = "DELETE FROM routes WHERE ((lower(origin) = ? AND lower(origin_state) = ?) AND (lower(destination) = ? AND lower(destination_state) = ?))" +
+      " OR ((lower(origin) = ? AND lower(origin_state) = ?) AND (lower(destination) = ? AND lower(destination_state) = ?))"
+    val statement: PreparedStatement = connection.prepareStatement(sql)
+    statement.setString(1, hop.hub1.city.toLowerCase)
+    statement.setString(2, hop.hub1.state.toLowerCase)
+    statement.setString(3, hop.hub2.city.toLowerCase)
+    statement.setString(4, hop.hub2.state.toLowerCase)
+    statement.setString(5, hop.hub2.city.toLowerCase)
+    statement.setString(6, hop.hub2.state.toLowerCase)
+    statement.setString(7, hop.hub1.city.toLowerCase)
+    statement.setString(8, hop.hub1.state.toLowerCase)
+
+    statement.executeUpdate()
   }
 
   def showAllHubs() = {
@@ -279,7 +327,7 @@ object SimUPS {
       print("Path is: ")
 
       for (i <- path.indices) {
-        if (i+1 < path.size) {
+        if (i + 1 < path.size) {
           print(path(i) + " > ")
           val hop = hops(path(i) + ">" + path(i + 1))
           route.enqueue(hop)
@@ -295,18 +343,37 @@ object SimUPS {
   }
 
 
-  def initializeHubList(inFile: String) = {
-    val source = Source.fromFile(inFile)
-    for (line <- source.getLines()) {
-      val cols = line.split(",").map(_.trim)
-      val hub1 = new Hub(cols(0), cols(1))
-      val hub2 = new Hub(cols(2), cols(3))
-      val hours = cols(4).toInt
-      val minutes = cols(5).toInt
-      val miles = cols(6).toInt
+  def loadHubList() = {
+    hubs.clear()
+    hops.clear()
+
+    val driver = "org.postgresql.Driver"
+    val url = "jdbc:postgresql:sim_ups"
+    val username = "mcooksey"
+    val password = "csa1csa1"
+
+    var connection: Connection = null
+
+    Class.forName(driver)
+    connection = DriverManager.getConnection(url, username, password)
+    val statement = connection.createStatement()
+    val resultSet = statement.executeQuery("Select * from routes")
+    while (resultSet.next()) {
+      val origin = resultSet.getString("origin")
+      val origin_state = resultSet.getString("origin_state")
+      val destination = resultSet.getString("destination")
+      val destination_state = resultSet.getString("destination_state")
+      val hours = resultSet.getInt("hours")
+      val minutes = resultSet.getInt("minutes")
+      val miles = resultSet.getInt("miles")
+      val hub1 = new Hub(origin, origin_state)
+      val hub2 = new Hub(destination, destination_state)
 
       putHop(hub1, hub2, hours, minutes, miles)
     }
+
+    connection.close()
+    println("Hubs loaded from database.")
   }
 
 }
